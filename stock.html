@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockPro | Sistema de Inventario</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'DM Sans', sans-serif; }
+    .mono { font-family: 'Space Mono', monospace; }
+    body { background: #0a0e1a; }
+    .grid-bg {
+      background-image: 
+        linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .glass {
+      background: rgba(15,20,40,0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(99,102,241,0.15);
+    }
+    .glass-card {
+      background: rgba(20,26,50,0.6);
+      border: 1px solid rgba(99,102,241,0.12);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .input-field {
+      background: rgba(10,14,26,0.8);
+      border: 1px solid rgba(99,102,241,0.2);
+      color: #e2e8f0;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.95rem;
+    }
+    .input-field:focus {
+      border-color: rgba(99,102,241,0.6);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+    }
+    .input-field::placeholder { color: #475569; }
+    .btn-primary {
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: white; font-weight: 600;
+      padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+      border: none; cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s; width: 100%;
+    }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-emerald {
+      background: linear-gradient(135deg, #059669, #10b981);
+      color: white; font-weight: 600;
+      padding: 0.75rem 1.5rem; border-radius: 0.5rem;
+      border: none; cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s; width: 100%;
+    }
+    .btn-emerald:hover { opacity: 0.9; }
+    .badge-stock-ok   { background: rgba(16,185,129,0.15); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+    .badge-stock-low  { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+    .badge-stock-zero { background: rgba(239,68,68,0.15);  color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+    .row-enter { animation: rowIn 0.25s ease forwards; }
+    @keyframes rowIn { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.35s ease forwards; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 50; animation: fadeIn 0.2s ease;
+    }
+    .modal-box {
+      background: #0f1428;
+      border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 1rem; padding: 2rem;
+      width: 100%; max-width: 420px;
+      animation: modalIn 0.25s ease;
+    }
+    @keyframes modalIn { from { opacity:0; transform: scale(0.95) translateY(10px); } to { opacity:1; transform: scale(1) translateY(0); } }
+    .stat-card {
+      background: rgba(20,26,50,0.6);
+      border: 1px solid rgba(99,102,241,0.12);
+      border-radius: 0.75rem; padding: 1.25rem 1.5rem;
+    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.3); border-radius: 3px; }
+    .tag { display: inline-block; background: rgba(99,102,241,0.15); color: #a5b4fc; border: 1px solid rgba(99,102,241,0.25); border-radius: 9999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 500; }
+    select.input-field option { background: #0a0e1a; }
+    .hidden { display: none !important; }
+    #toast {
+      position: fixed; bottom: 1.5rem; right: 1.5rem;
+      background: #1e2540; border: 1px solid rgba(99,102,241,0.3);
+      color: #e2e8f0; padding: 0.75rem 1.25rem;
+      border-radius: 0.625rem; font-size: 0.875rem;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      z-index: 100; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    #toast.show { opacity: 1; }
+
+    /* Filtro crítico activo */
+    .btn-critical { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.3); border-radius: 0.5rem; padding: 0.5rem 1rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+    .btn-critical:hover { background: rgba(239,68,68,0.22); }
+    .btn-critical.active { background: rgba(239,68,68,0.25); border-color: rgba(239,68,68,0.6); color: #fca5a5; box-shadow: 0 0 0 2px rgba(239,68,68,0.15); }
+
+    /* Botones de ajuste de stock */
+    .stock-btn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid rgba(99,102,241,0.25); background: rgba(99,102,241,0.1); color: #a5b4fc; font-size: 1rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; line-height: 1; }
+    .stock-btn:hover { background: rgba(99,102,241,0.25); border-color: rgba(99,102,241,0.5); }
+    .stock-btn.minus { border-color: rgba(239,68,68,0.25); background: rgba(239,68,68,0.08); color: #f87171; }
+    .stock-btn.minus:hover { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); }
+    .stock-val { min-width: 32px; text-align: center; font-family: 'Space Mono', monospace; font-size: 0.85rem; }
+  </style>
+</head>
+<body class="grid-bg min-h-screen text-slate-200">
+
+  <div id="toast"></div>
+
+  <!-- ======= AUTH ======= -->
+  <div id="auth-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md fade-in">
+      <div class="text-center mb-8">
+        <div class="inline-flex items-center gap-2 mb-3">
+          <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          </div>
+          <span class="mono text-xl font-bold text-white">StockPro</span>
+        </div>
+        <p class="text-slate-400 text-sm">Sistema de gestión de inventario</p>
+      </div>
+      <div class="glass rounded-2xl p-8">
+        <div id="login-view" class="space-y-4">
+          <h2 class="text-lg font-semibold text-center text-white mb-6">Iniciá sesión</h2>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block font-medium uppercase tracking-wider">Email</label>
+            <input id="email-l" type="email" placeholder="tu@email.com" class="input-field">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block font-medium uppercase tracking-wider">Contraseña</label>
+            <input id="password-l" type="password" placeholder="••••••••" class="input-field" onkeydown="if(event.key==='Enter')login()">
+          </div>
+          <button onclick="login()" class="btn-primary mt-2">Ingresar</button>
+          <p class="text-center text-sm text-slate-400 pt-2">¿No tenés cuenta? <button onclick="showAuthView('signup-view')" class="text-indigo-400 font-semibold hover:text-indigo-300 transition">Registrate</button></p>
+        </div>
+        <div id="signup-view" class="hidden space-y-4">
+          <h2 class="text-lg font-semibold text-center text-white mb-6">Crear cuenta</h2>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block font-medium uppercase tracking-wider">Email</label>
+            <input id="email-s" type="email" placeholder="tu@email.com" class="input-field">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block font-medium uppercase tracking-wider">Contraseña</label>
+            <input id="password-s" type="password" placeholder="Mínimo 6 caracteres" class="input-field" onkeydown="if(event.key==='Enter')signup()">
+          </div>
+          <button onclick="signup()" class="btn-emerald mt-2">Crear cuenta</button>
+          <p class="text-center text-sm text-slate-400 pt-2">¿Ya tenés cuenta? <button onclick="showAuthView('login-view')" class="text-indigo-400 font-semibold hover:text-indigo-300 transition">Iniciá sesión</button></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= DASHBOARD ======= -->
+  <div id="dashboard" class="hidden min-h-screen">
+    <header class="glass border-b border-indigo-900/30 sticky top-0 z-40">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-md bg-indigo-600 flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          </div>
+          <span class="mono font-bold text-white">StockPro</span>
+        </div>
+        <div class="flex items-center gap-3">
+          <span id="user-email" class="text-xs text-slate-400 hidden sm:block"></span>
+          <button onclick="handleLogout()" class="text-xs bg-red-950/60 text-red-300 border border-red-900/40 px-3 py-1.5 rounded-lg hover:bg-red-900/40 transition">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+
+      <!-- Stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="stat-card">
+          <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Productos</p>
+          <p id="stat-total" class="text-2xl font-bold text-white mono">—</p>
+        </div>
+        <div class="stat-card">
+          <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">En stock</p>
+          <p id="stat-instock" class="text-2xl font-bold text-emerald-400 mono">—</p>
+        </div>
+        <div class="stat-card cursor-pointer hover:border-amber-500/40 transition" onclick="toggleCritical()" id="stat-card-low">
+          <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Stock bajo</p>
+          <p id="stat-low" class="text-2xl font-bold text-amber-400 mono">—</p>
+        </div>
+        <div class="stat-card cursor-pointer hover:border-red-500/40 transition" onclick="toggleCritical()" id="stat-card-zero">
+          <p class="text-xs text-slate-400 uppercase tracking-wider mb-1">Sin stock</p>
+          <p id="stat-zero" class="text-2xl font-bold text-red-400 mono">—</p>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div class="flex gap-2 flex-wrap flex-1 w-full sm:w-auto items-center">
+          <input id="search" type="text" placeholder="Buscar producto..." class="input-field" style="max-width:220px" oninput="renderTable()">
+          <select id="filter-cat" class="input-field" style="max-width:160px" onchange="renderTable()">
+            <option value="">Todas las categorías</option>
+          </select>
+          <!-- Filtro crítico -->
+          <button id="btn-critical" onclick="toggleCritical()" class="btn-critical">
+            🔴 Stock crítico
+          </button>
+        </div>
+        <div class="flex gap-2 items-center">
+          <!-- Exportar CSV -->
+          <button onclick="exportCSV()" class="flex items-center gap-1.5 bg-emerald-950/50 hover:bg-emerald-900/40 text-emerald-300 border border-emerald-900/40 font-semibold px-3 py-2 rounded-lg transition text-sm whitespace-nowrap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar CSV
+          </button>
+          <!-- Nuevo producto -->
+          <button onclick="openModal()" class="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-3 py-2 rounded-lg transition text-sm whitespace-nowrap">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nuevo producto
+          </button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="glass-card rounded-xl overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-indigo-900/30 text-left">
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold">Producto</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold">Categoría</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold text-right">Precio</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold text-center">Stock</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold text-center">Estado</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold text-center">Actualizado</th>
+                <th class="px-4 py-3 text-xs text-slate-400 uppercase tracking-wider font-semibold text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="table-body">
+              <tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ======= MODAL AGREGAR/EDITAR ======= -->
+  <div id="modal" class="modal-overlay hidden">
+    <div class="modal-box w-full mx-4">
+      <div class="flex items-center justify-between mb-6">
+        <h3 id="modal-title" class="text-lg font-semibold text-white">Nuevo producto</h3>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-white transition">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="space-y-4">
+        <input type="hidden" id="edit-id">
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Nombre *</label>
+          <input id="f-name" type="text" placeholder="Nombre del producto" class="input-field">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Categoría</label>
+          <input id="f-cat" type="text" placeholder="Ej: Electrónica, Ropa..." class="input-field">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Precio ($)</label>
+            <input id="f-price" type="number" min="0" step="0.01" placeholder="0.00" class="input-field">
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Cantidad</label>
+            <input id="f-qty" type="number" min="0" placeholder="0" class="input-field">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 mb-1 block uppercase tracking-wider">Descripción</label>
+          <input id="f-desc" type="text" placeholder="Opcional" class="input-field">
+        </div>
+        <div class="flex gap-3 pt-2">
+          <button onclick="closeModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2.5 rounded-lg transition text-sm">Cancelar</button>
+          <button onclick="saveProduct()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg transition text-sm">Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= MODAL AJUSTE RÁPIDO DE STOCK ======= -->
+  <div id="modal-stock" class="modal-overlay hidden">
+    <div class="modal-box w-full mx-4" style="max-width:340px">
+      <div class="flex items-center justify-between mb-5">
+        <h3 class="text-base font-semibold text-white">Ajustar stock</h3>
+        <button onclick="closeStockModal()" class="text-slate-400 hover:text-white transition">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <p id="stock-modal-name" class="text-indigo-300 font-semibold text-sm mb-4 truncate"></p>
+      <div class="flex items-center justify-center gap-4 py-4">
+        <button onclick="changeStockModal(-10)" class="stock-btn minus text-xs" title="-10">−10</button>
+        <button onclick="changeStockModal(-1)" class="stock-btn minus" title="-1">−</button>
+        <span id="stock-modal-val" class="stock-val text-2xl font-bold text-white">0</span>
+        <button onclick="changeStockModal(1)" class="stock-btn" title="+1">+</button>
+        <button onclick="changeStockModal(10)" class="stock-btn text-xs" title="+10">+10</button>
+      </div>
+      <p class="text-center text-xs text-slate-500 mb-5">Stock actual</p>
+      <div class="flex gap-3">
+        <button onclick="closeStockModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2.5 rounded-lg transition text-sm">Cancelar</button>
+        <button onclick="saveStockModal()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-lg transition text-sm">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======= MODAL CONFIRMAR ELIMINAR ======= -->
+  <div id="modal-delete" class="modal-overlay hidden">
+    <div class="modal-box w-full mx-4" style="max-width:360px">
+      <div class="text-center space-y-4">
+        <div class="w-12 h-12 rounded-full bg-red-950/60 border border-red-900/40 flex items-center justify-center mx-auto">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        </div>
+        <div>
+          <h3 class="text-white font-semibold text-lg">Eliminar producto</h3>
+          <p class="text-slate-400 text-sm mt-1">¿Estás seguro? Esta acción no se puede deshacer.</p>
+        </div>
+        <div class="flex gap-3">
+          <button onclick="closeDeleteModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-2.5 rounded-lg transition text-sm">Cancelar</button>
+          <button onclick="confirmDelete()" class="flex-1 bg-red-700 hover:bg-red-600 text-white font-semibold py-2.5 rounded-lg transition text-sm">Eliminar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const { createClient } = supabase;
+  const sb = createClient(
+    'https://debizrveislybpsiimln.supabase.co',
+    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRlYml6cnZlaXNseWJwc2lpbWxuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MzM3MDEsImV4cCI6MjA5NjAwOTcwMX0.PuP0YGfLSeoeARZcSm2SNZhuVJ8-UwW6ZU5DGeVwq_0'
+  );
+
+  let products = [];
+  let deleteTargetId = null;
+  let criticalFilter = false;
+  let stockModalId = null;
+  let stockModalVal = 0;
+
+  // ─── TOAST ───────────────────────────────────────────────────
+  function toast(msg, type = 'info') {
+    const el = document.getElementById('toast');
+    const colors = { info: '#6366f1', success: '#10b981', error: '#ef4444' };
+    el.style.borderColor = colors[type] + '55';
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // ─── AUTH ────────────────────────────────────────────────────
+  function showAuthView(id) {
+    document.getElementById('login-view').classList.add('hidden');
+    document.getElementById('signup-view').classList.add('hidden');
+    document.getElementById(id).classList.remove('hidden');
+  }
+
+  async function login() {
+    const email = document.getElementById('email-l').value.trim();
+    const pass  = document.getElementById('password-l').value;
+    if (!email || !pass) { toast('Completá todos los campos', 'error'); return; }
+    const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (error) toast(error.message, 'error');
+    else initDashboard();
+  }
+
+  async function signup() {
+    const email = document.getElementById('email-s').value.trim();
+    const pass  = document.getElementById('password-s').value;
+    if (!email || !pass) { toast('Completá todos los campos', 'error'); return; }
+    if (pass.length < 6) { toast('La contraseña debe tener al menos 6 caracteres', 'error'); return; }
+    const { error } = await sb.auth.signUp({ email, password: pass });
+    if (error) toast(error.message, 'error');
+    else toast('¡Cuenta creada! Revisá tu email para confirmar.', 'success');
+  }
+
+  async function handleLogout() {
+    await sb.auth.signOut();
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('auth-screen').classList.remove('hidden');
+    products = []; criticalFilter = false;
+  }
+
+  // ─── DASHBOARD ───────────────────────────────────────────────
+  async function initDashboard() {
+    document.getElementById('auth-screen').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    const { data: { user } } = await sb.auth.getUser();
+    if (user) document.getElementById('user-email').textContent = user.email;
+    await loadProducts();
+  }
+
+  async function loadProducts() {
+    const { data, error } = await sb
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) { toast('Error al cargar productos', 'error'); return; }
+    products = data || [];
+    updateStats();
+    updateCategoryFilter();
+    renderTable();
+  }
+
+  function updateStats() {
+    document.getElementById('stat-total').textContent   = products.length;
+    document.getElementById('stat-instock').textContent = products.filter(p => p.quantity > 5).length;
+    document.getElementById('stat-low').textContent     = products.filter(p => p.quantity > 0 && p.quantity <= 5).length;
+    document.getElementById('stat-zero').textContent    = products.filter(p => p.quantity === 0).length;
+  }
+
+  function updateCategoryFilter() {
+    const cats = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+    const sel = document.getElementById('filter-cat');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todas las categorías</option>';
+    cats.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      if (c === cur) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+
+  // ─── FILTRO CRÍTICO ──────────────────────────────────────────
+  function toggleCritical() {
+    criticalFilter = !criticalFilter;
+    const btn = document.getElementById('btn-critical');
+    btn.classList.toggle('active', criticalFilter);
+    renderTable();
+  }
+
+  // ─── FORMATO FECHA ───────────────────────────────────────────
+  function formatDate(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return 'Hace un momento';
+    if (diff < 3600) return `Hace ${Math.floor(diff/60)} min`;
+    if (diff < 86400) return `Hace ${Math.floor(diff/3600)} h`;
+    if (diff < 172800) return 'Ayer';
+    return d.toLocaleDateString('es-AR', { day:'2-digit', month:'short', year:'numeric' });
+  }
+
+  // ─── RENDER TABLE ────────────────────────────────────────────
+  function renderTable() {
+    const search = document.getElementById('search').value.toLowerCase();
+    const catFilter = document.getElementById('filter-cat').value;
+
+    let filtered = products.filter(p => {
+      if (criticalFilter && p.quantity > 5) return false;
+      const matchSearch = !search ||
+        (p.name || '').toLowerCase().includes(search) ||
+        (p.category || '').toLowerCase().includes(search) ||
+        (p.description || '').toLowerCase().includes(search);
+      const matchCat = !catFilter || p.category === catFilter;
+      return matchSearch && matchCat;
+    });
+
+    const tbody = document.getElementById('table-body');
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-10 text-center text-slate-500 text-sm">
+        ${criticalFilter ? '🟢 No hay productos con stock crítico.' : products.length === 0 ? 'No tenés productos aún. ¡Agregá el primero!' : 'No se encontraron productos.'}
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map((p, i) => {
+      const qty = p.quantity ?? 0;
+      let badgeClass, badgeText;
+      if (qty === 0)     { badgeClass = 'badge-stock-zero'; badgeText = 'Sin stock'; }
+      else if (qty <= 5) { badgeClass = 'badge-stock-low';  badgeText = 'Stock bajo'; }
+      else               { badgeClass = 'badge-stock-ok';   badgeText = 'En stock'; }
+
+      const price = p.price != null
+        ? '$' + Number(p.price).toLocaleString('es-AR', { minimumFractionDigits: 2 })
+        : '—';
+
+      const fecha = formatDate(p.updated_at || p.created_at);
+
+      return `<tr class="border-b border-indigo-900/20 hover:bg-indigo-950/20 transition row-enter" style="animation-delay:${i*0.03}s">
+        <td class="px-4 py-3">
+          <p class="font-medium text-white">${esc(p.name || '—')}</p>
+          ${p.description ? `<p class="text-xs text-slate-500 mt-0.5">${esc(p.description)}</p>` : ''}
+        </td>
+        <td class="px-4 py-3">
+          ${p.category ? `<span class="tag">${esc(p.category)}</span>` : '<span class="text-slate-600">—</span>'}
+        </td>
+        <td class="px-4 py-3 text-right mono text-slate-300">${price}</td>
+        <td class="px-4 py-3 text-center">
+          <div class="flex items-center justify-center gap-1">
+            <button onclick="quickStock('${p.id}', ${qty}, -1)" class="stock-btn minus" title="Restar 1">−</button>
+            <span class="stock-val ${qty === 0 ? 'text-red-400' : qty <= 5 ? 'text-amber-400' : 'text-emerald-400'}">${qty}</span>
+            <button onclick="quickStock('${p.id}', ${qty}, 1)" class="stock-btn" title="Sumar 1">+</button>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span class="text-xs font-medium px-2 py-0.5 rounded-full ${badgeClass}">${badgeText}</span>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <span class="text-xs text-slate-500" title="${p.updated_at || p.created_at || ''}">${fecha}</span>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <div class="flex gap-1 justify-end">
+            <button onclick="openStockModal('${p.id}')" class="text-xs text-amber-400 hover:text-amber-300 border border-amber-900/30 hover:border-amber-700/40 px-2 py-1 rounded transition" title="Ajustar stock">📦</button>
+            <button onclick="openModal('${p.id}')" class="text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-900/40 hover:border-indigo-500/40 px-2 py-1 rounded transition">Editar</button>
+            <button onclick="openDeleteModal('${p.id}')" class="text-xs text-red-400 hover:text-red-300 border border-red-900/30 hover:border-red-700/40 px-2 py-1 rounded transition">Borrar</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ─── QUICK STOCK (±1 directo desde la tabla) ─────────────────
+  async function quickStock(id, current, delta) {
+    const newQty = Math.max(0, current + delta);
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('products')
+      .update({ quantity: newQty, updated_at: new Date().toISOString() })
+      .eq('id', id).eq('user_id', user.id);
+    if (error) { toast('Error al actualizar stock', 'error'); return; }
+    await loadProducts();
+  }
+
+  // ─── MODAL AJUSTE DE STOCK ───────────────────────────────────
+  function openStockModal(id) {
+    const p = products.find(x => x.id === id);
+    if (!p) return;
+    stockModalId = id;
+    stockModalVal = p.quantity ?? 0;
+    document.getElementById('stock-modal-name').textContent = p.name;
+    document.getElementById('stock-modal-val').textContent = stockModalVal;
+    document.getElementById('modal-stock').classList.remove('hidden');
+  }
+
+  function changeStockModal(delta) {
+    stockModalVal = Math.max(0, stockModalVal + delta);
+    document.getElementById('stock-modal-val').textContent = stockModalVal;
+  }
+
+  function closeStockModal() {
+    stockModalId = null;
+    document.getElementById('modal-stock').classList.add('hidden');
+  }
+
+  async function saveStockModal() {
+    if (!stockModalId) return;
+    const { data: { user } } = await sb.auth.getUser();
+    const { error } = await sb.from('products')
+      .update({ quantity: stockModalVal, updated_at: new Date().toISOString() })
+      .eq('id', stockModalId).eq('user_id', user.id);
+    if (error) { toast('Error al guardar', 'error'); return; }
+    toast('Stock actualizado ✓', 'success');
+    closeStockModal();
+    await loadProducts();
+  }
+
+  // ─── EXPORTAR CSV ────────────────────────────────────────────
+  function exportCSV() {
+    const search    = document.getElementById('search').value.toLowerCase();
+    const catFilter = document.getElementById('filter-cat').value;
+
+    const visible = products.filter(p => {
+      if (criticalFilter && p.quantity > 5) return false;
+      const matchSearch = !search ||
+        (p.name || '').toLowerCase().includes(search) ||
+        (p.category || '').toLowerCase().includes(search) ||
+        (p.description || '').toLowerCase().includes(search);
+      const matchCat = !catFilter || p.category === catFilter;
+      return matchSearch && matchCat;
+    });
+
+    if (visible.length === 0) { toast('No hay productos para exportar', 'error'); return; }
+
+    const headers = ['Nombre', 'Categoría', 'Precio', 'Cantidad', 'Estado', 'Descripción', 'Última actualización'];
+    const rows = visible.map(p => {
+      const qty = p.quantity ?? 0;
+      const estado = qty === 0 ? 'Sin stock' : qty <= 5 ? 'Stock bajo' : 'En stock';
+      const fecha  = (p.updated_at || p.created_at || '').replace('T', ' ').slice(0, 16);
+      return [
+        `"${(p.name || '').replace(/"/g,'""')}"`,
+        `"${(p.category || '').replace(/"/g,'""')}"`,
+        p.price ?? '',
+        qty,
+        estado,
+        `"${(p.description || '').replace(/"/g,'""')}"`,
+        fecha
+      ].join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = `stockpro_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast(`${visible.length} productos exportados ✓`, 'success');
+  }
+
+  // ─── MODAL PRODUCTO ──────────────────────────────────────────
+  function openModal(id = null) {
+    document.getElementById('edit-id').value = id || '';
+    document.getElementById('modal-title').textContent = id ? 'Editar producto' : 'Nuevo producto';
+    if (id) {
+      const p = products.find(x => x.id === id);
+      if (p) {
+        document.getElementById('f-name').value  = p.name || '';
+        document.getElementById('f-cat').value   = p.category || '';
+        document.getElementById('f-price').value = p.price ?? '';
+        document.getElementById('f-qty').value   = p.quantity ?? '';
+        document.getElementById('f-desc').value  = p.description || '';
+      }
+    } else {
+      ['f-name','f-cat','f-price','f-qty','f-desc'].forEach(id => document.getElementById(id).value = '');
+    }
+    document.getElementById('modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('f-name').focus(), 50);
+  }
+
+  function closeModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function saveProduct() {
+    const id    = document.getElementById('edit-id').value;
+    const name  = document.getElementById('f-name').value.trim();
+    const cat   = document.getElementById('f-cat').value.trim();
+    const price = parseFloat(document.getElementById('f-price').value) || null;
+    const qty   = parseInt(document.getElementById('f-qty').value) || 0;
+    const desc  = document.getElementById('f-desc').value.trim();
+
+    if (!name) { toast('El nombre es obligatorio', 'error'); return; }
+
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) { toast('Sesión expirada', 'error'); return; }
+
+    const payload = { name, category: cat || null, price, quantity: qty, description: desc || null, user_id: user.id, updated_at: new Date().toISOString() };
+
+    let error;
+    if (id) {
+      ({ error } = await sb.from('products').update(payload).eq('id', id).eq('user_id', user.id));
+    } else {
+      ({ error } = await sb.from('products').insert([payload]));
+    }
+
+    if (error) { toast('Error: ' + error.message, 'error'); console.error(error); return; }
+    toast(id ? 'Producto actualizado ✓' : 'Producto agregado ✓', 'success');
+    closeModal();
+    await loadProducts();
+  }
+
+  // ─── MODAL ELIMINAR ──────────────────────────────────────────
+  function openDeleteModal(id) { deleteTargetId = id; document.getElementById('modal-delete').classList.remove('hidden'); }
+  function closeDeleteModal()  { deleteTargetId = null; document.getElementById('modal-delete').classList.add('hidden'); }
+
+  async function confirmDelete() {
+    if (!deleteTargetId) return;
+    const { error } = await sb.from('products').delete().eq('id', deleteTargetId);
+    if (error) { toast('Error al eliminar', 'error'); return; }
+    toast('Producto eliminado', 'info');
+    closeDeleteModal();
+    await loadProducts();
+  }
+
+  // ─── INIT ────────────────────────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal(); closeDeleteModal(); closeStockModal(); }
+  });
+
+  sb.auth.getSession().then(({ data }) => { if (data.session) initDashboard(); });
+  sb.auth.onAuthStateChange((event, session) => { if (event === 'SIGNED_IN' && session) initDashboard(); });
+</script>
+</body>
+</html>
